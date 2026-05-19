@@ -110,6 +110,7 @@ class CustomTVTextFieldState extends State<CustomTVTextField>
   final ValueNotifier<String?> _errorText = ValueNotifier<String?>(null);
   final FocusNode _keyboardFocusNode = FocusNode();
   final FocusNode _systemInputFocusNode = FocusNode();
+  FocusNode? _focusToRestoreAfterOverlay;
 
   bool _useSystemImeSession = false;
 
@@ -272,6 +273,12 @@ class CustomTVTextFieldState extends State<CustomTVTextField>
       return;
     }
 
+    if (!_isOverlayOpen.value) {
+      final previousFocus = FocusManager.instance.primaryFocus;
+      _focusToRestoreAfterOverlay =
+          identical(previousFocus, _keyboardFocusNode) ? null : previousFocus;
+    }
+
     _keyboardController.setText(widget.controller.text);
     _keyboardController.show();
     _keyboardFocusNode.requestFocus();
@@ -363,7 +370,17 @@ class CustomTVTextFieldState extends State<CustomTVTextField>
           recentSuggestions: widget.recentSuggestions,
         ),
       ),
-    );
+    ).whenComplete(() {
+      _isOverlayOpen.value = false;
+
+      final focusToRestore = _focusToRestoreAfterOverlay;
+      _focusToRestoreAfterOverlay = null;
+      if (focusToRestore != null &&
+          focusToRestore.canRequestFocus &&
+          focusToRestore.context != null) {
+        focusToRestore.requestFocus();
+      }
+    });
   }
 
   @override

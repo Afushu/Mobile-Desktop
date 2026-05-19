@@ -133,6 +133,15 @@ class _SearchScreenState extends State<SearchScreen> {
     );
     _vm.searchImmediate(trimmed);
     unawaited(_saveRecentSearch(trimmed));
+
+    if (PlatformDetection.isTV) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_searchFocus.canRequestFocus) {
+          _searchFocus.requestFocus();
+        }
+      });
+    }
   }
 
   void _onVoiceControllerChanged() {
