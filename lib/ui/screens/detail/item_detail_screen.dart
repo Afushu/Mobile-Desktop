@@ -4919,17 +4919,47 @@ class _ActionButtonsState extends State<_ActionButtons> {
       () async {
         switch (item.type) {
           case 'Series':
+            const episodeQueueFields =
+                'Overview,MediaStreams,MediaSources,RunTimeTicks,Trickplay';
             final nextUp = viewModel.nextUp;
             if (nextUp == null) return;
+            final seriesId =
+                (nextUp.seriesId?.isNotEmpty ?? false)
+                    ? nextUp.seriesId!
+                    : item.id;
+            final seasonId = nextUp.seasonId;
+            var episodes = <AggregatedItem>[nextUp];
+            if (seasonId != null && seasonId.isNotEmpty) {
+              try {
+                final client = _clientForItem(nextUp);
+                final data = await client.itemsApi.getEpisodes(
+                  seriesId,
+                  seasonId: seasonId,
+                  fields: episodeQueueFields,
+                );
+                final seasonEpisodes = _mapRawItemsForServer(
+                  data['Items'],
+                  nextUp.serverId,
+                );
+                if (seasonEpisodes.isNotEmpty) {
+                  episodes = seasonEpisodes;
+                }
+              } catch (_) {}
+            }
+            final startIndex = episodes.indexWhere((e) => e.id == nextUp.id);
+            final idx = startIndex >= 0 ? startIndex : 0;
+            final selectedEpisode = episodes[idx];
             final startPosition = resume
-                ? (nextUp.playbackPosition ?? Duration.zero)
+                ? (selectedEpisode.playbackPosition ?? Duration.zero)
                 : Duration.zero;
+            if (!context.mounted) return;
             final forceTranscode = await _shouldForceTranscodeForDolbyVision(
               context,
-              [nextUp],
+              [selectedEpisode],
             );
             await manager.playItems(
-              [nextUp],
+              episodes,
+              startIndex: idx,
               startPosition: startPosition,
               audioStreamIndex: audioStreamIndex,
               subtitleStreamIndex: subtitleStreamIndex,
@@ -4946,12 +4976,13 @@ class _ActionButtonsState extends State<_ActionButtons> {
                   )
                 : episodes.indexWhere((e) => !e.isPlayed);
             final idx = startIndex >= 0 ? startIndex : 0;
+            final selectedEpisode = episodes[idx];
             final startPosition = resume
-                ? (episodes[idx].playbackPosition ?? Duration.zero)
+                ? (selectedEpisode.playbackPosition ?? Duration.zero)
                 : Duration.zero;
             final forceTranscode = await _shouldForceTranscodeForDolbyVision(
               context,
-              [episodes[idx]],
+              [selectedEpisode],
             );
             await manager.playItems(
               episodes,
@@ -4968,12 +4999,13 @@ class _ActionButtonsState extends State<_ActionButtons> {
             if (episodes.length > 1) {
               final startIndex = episodes.indexWhere((e) => e.id == item.id);
               final idx = startIndex >= 0 ? startIndex : 0;
+              final selectedEpisode = episodes[idx];
               final startPosition = resume
-                  ? (episodes[idx].playbackPosition ?? Duration.zero)
+                  ? (selectedEpisode.playbackPosition ?? Duration.zero)
                   : Duration.zero;
               final forceTranscode = await _shouldForceTranscodeForDolbyVision(
                 context,
-                [episodes[idx]],
+                [selectedEpisode],
                 mediaSourceId: widget.selectedMediaSourceId,
               );
               await manager.playItems(
