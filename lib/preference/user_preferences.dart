@@ -376,7 +376,7 @@ class UserPreferences extends ChangeNotifier {
 
   static final playbackEnginePreference = EnumPreference(
     key: 'playback_engine_preference',
-    defaultValue: PlatformDetection.isAndroid
+    defaultValue: PlatformDetection.isAndroid && PlatformDetection.isTV
         ? PlaybackEnginePreference.media3
         : PlaybackEnginePreference.mpv,
     values: PlaybackEnginePreference.values,

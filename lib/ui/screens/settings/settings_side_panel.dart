@@ -2186,8 +2186,44 @@ class _ExternalPlayerAppIcon extends StatelessWidget {
   }
 }
 
-class _AudioPreferencesScreen extends StatelessWidget {
+class _AudioPreferencesScreen extends StatefulWidget {
   const _AudioPreferencesScreen();
+
+  @override
+  State<_AudioPreferencesScreen> createState() => _AudioPreferencesScreenState();
+}
+
+class _AudioPreferencesScreenState extends State<_AudioPreferencesScreen> {
+  late final UserPreferences _prefs;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefs = GetIt.instance<UserPreferences>();
+    _prefs.addListener(_onPreferencesChanged);
+  }
+
+  @override
+  void dispose() {
+    _prefs.removeListener(_onPreferencesChanged);
+    super.dispose();
+  }
+
+  void _onPreferencesChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  bool get _showPassthroughToggles {
+    if (PlatformDetection.isWeb) {
+      return false;
+    }
+    if (!PlatformDetection.isAndroid) {
+      return true;
+    }
+    return _prefs.get(UserPreferences.playbackEnginePreference) ==
+        PlaybackEnginePreference.mpv;
+  }
 
   String _capabilitySubtitle(
     AppLocalizations l10n, {
@@ -2263,7 +2299,7 @@ class _AudioPreferencesScreen extends StatelessWidget {
                 'Allow server fallback to stereo AAC when passthrough audio codecs fail.',
             icon: Icons.hearing,
           ),
-          if (!PlatformDetection.useMobileUi) ...[
+          if (_showPassthroughToggles) ...[
             SwitchPreferenceTile(
               preference: UserPreferences.ac3Enabled,
               title: l10n.ac3Passthrough,
@@ -2274,17 +2310,16 @@ class _AudioPreferencesScreen extends StatelessWidget {
               ),
               icon: Icons.speaker,
             ),
-            if (PlatformDetection.isAndroid && PlatformDetection.isTV)
-              SwitchPreferenceTile(
-                preference: UserPreferences.dtsEnabled,
-                title: l10n.dtsPassthrough,
-                subtitle: _capabilitySubtitle(
-                  l10n,
-                  baseSubtitle: l10n.enableDtsPassthrough,
-                  isSupported: PlatformDetection.supportsDtsAudio,
-                ),
-                icon: Icons.audiotrack,
+            SwitchPreferenceTile(
+              preference: UserPreferences.dtsEnabled,
+              title: l10n.dtsPassthrough,
+              subtitle: _capabilitySubtitle(
+                l10n,
+                baseSubtitle: l10n.enableDtsPassthrough,
+                isSupported: PlatformDetection.supportsDtsAudio,
               ),
+              icon: Icons.audiotrack,
+            ),
             SwitchPreferenceTile(
               preference: UserPreferences.trueHdEnabled,
               title: l10n.trueHdSupport,

@@ -55,6 +55,27 @@ Map<dynamic, dynamic>? _stereoAacFallbackProfile(Map<String, dynamic> profile) {
   return null;
 }
 
+Set<String> _videoDirectPlayAudioCodecs(Map<String, dynamic> profile) {
+  final directPlayProfiles =
+      profile['DirectPlayProfiles'] as List<dynamic>? ?? const [];
+
+  for (final rawProfile in directPlayProfiles) {
+    final directPlay = rawProfile as Map<dynamic, dynamic>;
+    if (directPlay['Type'] != 'Video') {
+      continue;
+    }
+
+    final value = directPlay['AudioCodec']?.toString() ?? '';
+    return value
+        .split(',')
+        .map((token) => token.trim())
+        .where((token) => token.isNotEmpty)
+        .toSet();
+  }
+
+  return <String>{};
+}
+
 void main() {
   group('DeviceProfileBuilder HEVC range filtering', () {
     test('does not exclude DoVi HDR10+ only because profile 8 is unsupported', () {
@@ -115,6 +136,65 @@ void main() {
       );
 
       expect(_stereoAacFallbackProfile(profile), isNull);
+    });
+  });
+
+  group('DeviceProfileBuilder passthrough codec filtering', () {
+    test('filters AC3 and EAC3 when AC3 passthrough is disabled', () {
+      final profile = DeviceProfileBuilder.build(
+        downMixAudio: false,
+        ac3Enabled: false,
+        dtsEnabled: true,
+        trueHdEnabled: true,
+      );
+
+      final codecs = _videoDirectPlayAudioCodecs(profile);
+      expect(codecs, isNot(contains('ac3')));
+      expect(codecs, isNot(contains('eac3')));
+      expect(codecs, contains('dts'));
+      expect(codecs, contains('truehd'));
+    });
+
+    test('filters DTS and DCA when DTS passthrough is disabled', () {
+      final profile = DeviceProfileBuilder.build(
+        downMixAudio: false,
+        ac3Enabled: true,
+        dtsEnabled: false,
+        trueHdEnabled: true,
+      );
+
+      final codecs = _videoDirectPlayAudioCodecs(profile);
+      expect(codecs, isNot(contains('dts')));
+      expect(codecs, isNot(contains('dca')));
+      expect(codecs, contains('ac3'));
+      expect(codecs, contains('truehd'));
+    });
+
+    test('filters TrueHD and MLP when TrueHD passthrough is disabled', () {
+      final profile = DeviceProfileBuilder.build(
+        downMixAudio: false,
+        ac3Enabled: true,
+        dtsEnabled: true,
+        trueHdEnabled: false,
+      );
+
+      final codecs = _videoDirectPlayAudioCodecs(profile);
+      expect(codecs, isNot(contains('truehd')));
+      expect(codecs, isNot(contains('mlp')));
+      expect(codecs, contains('ac3'));
+      expect(codecs, contains('dts'));
+    });
+
+    test('downmix mode keeps only stereo-safe audio codecs', () {
+      final profile = DeviceProfileBuilder.build(
+        downMixAudio: true,
+        ac3Enabled: true,
+        dtsEnabled: true,
+        trueHdEnabled: true,
+      );
+
+      final codecs = _videoDirectPlayAudioCodecs(profile);
+      expect(codecs, equals(<String>{'aac', 'mp2', 'mp3'}));
     });
   });
 

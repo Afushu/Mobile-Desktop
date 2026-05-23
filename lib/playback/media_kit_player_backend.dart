@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -176,6 +177,7 @@ class MediaKitPlayerBackend implements PlayerBackend {
   final bool _hwDecodingEnabled;
   bool _didNotifyNativeHandle = false;
   bool _didConfigureAppleMobileLibassFont = false;
+  Map<String, String>? _appliedAudioPassthroughProperties;
   String? _appliedCustomMpvConfPath;
   DateTime? _appliedCustomMpvConfMtime;
   static final Map<String, _ParsedMpvConfCacheEntry> _parsedMpvConfCache =
@@ -454,6 +456,7 @@ class MediaKitPlayerBackend implements PlayerBackend {
 
     await _notifyNativeHandleReady();
     await _configureAppleMobileLibassFont();
+    await _applyAudioPassthroughOptions();
     await _applyCustomMpvConfIfEnabled();
     await _applyAssOverrideMode();
     final media = Media(url);
@@ -507,6 +510,102 @@ class MediaKitPlayerBackend implements PlayerBackend {
         }
         await _player.play();
       } catch (_) {}
+    } catch (_) {}
+  }
+
+  @visibleForTesting
+  static List<String> passthroughCodecsFromPreferences({
+    required AudioBehavior audioBehavior,
+    required bool ac3Enabled,
+    required bool dtsEnabled,
+    required bool trueHdEnabled,
+  }) {
+    if (audioBehavior == AudioBehavior.downmixToStereo) {
+      return const <String>[];
+    }
+
+    final codecs = <String>[];
+    if (ac3Enabled) {
+      codecs.addAll(const <String>['ac3', 'eac3']);
+    }
+    if (dtsEnabled) {
+      codecs.add('dts');
+    }
+    if (trueHdEnabled) {
+      codecs.add('truehd');
+    }
+    return codecs;
+  }
+
+  @visibleForTesting
+  static Map<String, String> passthroughMpvPropertiesFromPreferences({
+    required AudioBehavior audioBehavior,
+    required bool ac3Enabled,
+    required bool dtsEnabled,
+    required bool trueHdEnabled,
+    required bool includeAudioExclusive,
+  }) {
+    final codecs = passthroughCodecsFromPreferences(
+      audioBehavior: audioBehavior,
+      ac3Enabled: ac3Enabled,
+      dtsEnabled: dtsEnabled,
+      trueHdEnabled: trueHdEnabled,
+    );
+
+    final properties = <String, String>{'audio-spdif': codecs.join(',')};
+    if (includeAudioExclusive) {
+      properties['audio-exclusive'] = codecs.isNotEmpty ? 'yes' : 'no';
+    }
+    return properties;
+  }
+
+  Future<void> _applyAudioPassthroughOptions() async {
+    if (_player.platform is! NativePlayer) {
+      return;
+    }
+
+    try {
+      final native = _player.platform as NativePlayer;
+      final properties = passthroughMpvPropertiesFromPreferences(
+        audioBehavior: _prefs.get(UserPreferences.audioBehavior),
+        ac3Enabled: _prefs.get(UserPreferences.ac3Enabled),
+        dtsEnabled: _prefs.get(UserPreferences.dtsEnabled),
+        trueHdEnabled: _prefs.get(UserPreferences.trueHdEnabled),
+        includeAudioExclusive: PlatformDetection.isDesktop,
+      );
+
+      if (mapEquals(_appliedAudioPassthroughProperties, properties)) {
+        return;
+      }
+
+      var allApplied = true;
+
+      for (final entry in properties.entries) {
+        final key = entry.key;
+        final value = entry.value;
+
+        final setOk = await _tryNativeSetProperty(native, key, value);
+        if (setOk) {
+          continue;
+        }
+
+        final commandOk = await _tryNativeCommand(native, [
+          'set_property',
+          key,
+          value,
+        ]);
+        if (!commandOk) {
+          allApplied = false;
+        }
+      }
+
+      if (allApplied) {
+        _appliedAudioPassthroughProperties = Map<String, String>.from(
+          properties,
+        );
+      } else {
+        _appliedAudioPassthroughProperties = null;
+      }
     } catch (_) {}
   }
 
@@ -755,6 +854,7 @@ class MediaKitPlayerBackend implements PlayerBackend {
     'saturation',
     'gamma',
     'sharpen',
+    'audio-spdif',
     'audio-channels',
     'audio-normalize-downmix',
     'deinterlace',
@@ -773,6 +873,7 @@ class MediaKitPlayerBackend implements PlayerBackend {
     'vo',
     'gpu-context',
     'hwdec',
+    'audio-exclusive',
     'vf',
     'af',
     'input-ipc-server',

@@ -217,7 +217,7 @@ Configuration files must not exceed **256 KB**. Larger files are rejected.
 - Scaling: `scale`, `cscale`, `dscale`, `scale-*` options
 - Rendering: `sigmoid-upscaling`, `deband`, `deband-*`, `interpolation`, `tscale`, `video-sync`
 - Color & tone: `tone-mapping`, `tone-mapping-param`, `target-trc`, `brightness`, `contrast`, `saturation`, `gamma`, `sharpen`
-- Audio: `audio-channels`, `audio-normalize-downmix`
+- Audio: `audio-spdif`, `audio-channels`, `audio-normalize-downmix`
 - Effects: `deinterlace`, `keep-open`
 - GLSL shaders: `glsl-shader*` (loading custom shaders)
 
@@ -227,6 +227,7 @@ Enable **Unsafe Advanced mpv Options** to unlock lower-level settings:
 - `vo` (video output driver)
 - `gpu-context` (GPU backend selection)
 - `hwdec` (hardware decoding mode)
+- `audio-exclusive` (request exclusive output mode)
 - `vf`, `af` (custom video/audio filters)
 - `input-ipc-server` (IPC socket endpoint)
 - `vd-lavc-*` (decoder options)
