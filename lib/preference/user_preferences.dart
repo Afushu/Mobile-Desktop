@@ -437,6 +437,12 @@ class UserPreferences extends ChangeNotifier {
     key: 'subtitles_default_to_none',
     defaultValue: false,
   );
+
+  static final preferSdhSubtitles = Preference(
+    key: 'prefer_sdh_subtitles',
+    defaultValue: false,
+  );
+
   static final mediaSegmentActions = Preference(
     key: 'media_segment_actions',
     defaultValue: 'intro:askToSkip,outro:askToSkip',

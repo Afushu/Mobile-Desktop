@@ -4674,18 +4674,77 @@ class _ActionButtonsState extends State<_ActionButtons> {
 
     final preferredNormalized = _normalizeLanguage(preferred);
     final preferredIso3 = _toIso3(preferredNormalized);
+    final preferSdh = prefs.get(UserPreferences.preferSdhSubtitles);
 
-    for (final stream in subtitleStreams) {
-      if (_languageMatchesPreferred(
+    Map<String, dynamic>? bestStream;
+    var bestScore = -1;
+
+    for (var i = 0; i < subtitleStreams.length; i++) {
+      final stream = subtitleStreams[i];
+      if (!_languageMatchesPreferred(
         (stream['Language'] as String?)?.trim(),
         preferredNormalized,
         preferredIso3,
       )) {
-        return stream['Index'] as int?;
+        continue;
+      }
+
+      final streamIndex = stream['Index'] as int?;
+      if (streamIndex == null) {
+        continue;
+      }
+
+      var score = 0;
+      final isSdh = _isSdhSubtitleStream(stream);
+      final isExternal = _isExternalSubtitleStream(stream);
+      if (isSdh == preferSdh) {
+        score += 100;
+      }
+      if (!isExternal) {
+        score += 10;
+      }
+      if (stream['IsDefault'] == true) {
+        score += 5;
+      }
+      // Prefer earlier stream order when scores are equal.
+      score = score * 1000 - i;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestStream = stream;
       }
     }
 
+    if (bestStream != null) {
+      return bestStream['Index'] as int?;
+    }
+
     return null;
+  }
+
+  bool _isExternalSubtitleStream(Map<String, dynamic> stream) {
+    if (stream['IsExternal'] == true) {
+      return true;
+    }
+    final deliveryMethod =
+        (stream['DeliveryMethod'] as String?)?.trim().toLowerCase();
+    return deliveryMethod == 'external';
+  }
+
+  bool _isSdhSubtitleStream(Map<String, dynamic> stream) {
+    if (stream['IsHearingImpaired'] == true) {
+      return true;
+    }
+
+    final titleParts = [
+      stream['DisplayTitle'] as String?,
+      stream['Title'] as String?,
+      stream['Name'] as String?,
+    ].whereType<String>().map((s) => s.toLowerCase()).join(' ');
+
+    return RegExp(
+      r'\b(sdh|cc|hoh|hearing\s*impaired|closed\s*caption)\b',
+    ).hasMatch(titleParts);
   }
 
   bool _isInSyncPlayGroup() {
@@ -5775,18 +5834,29 @@ class _ActionButtonsState extends State<_ActionButtons> {
   ) async {
     _syncSubtitleSelectionFromActivePlayback();
     final canDownloadRemote = _canDownloadRemoteSubtitles(item);
+    final internalStreams = streams
+        .where((s) => !_isExternalSubtitleStream(s))
+        .toList(growable: false);
+    final externalStreams = streams
+        .where(_isExternalSubtitleStream)
+        .toList(growable: false);
+    final displayStreams = [
+      ...internalStreams,
+      ...externalStreams,
+    ];
+
     final effectiveSubtitleIndex = _effectiveSubtitleStreamIndex(streams);
     final currentIdx = effectiveSubtitleIndex != null
         ? (effectiveSubtitleIndex == -1
               ? 0
-              : streams.indexWhere(
+              : displayStreams.indexWhere(
                       (s) => s['Index'] == effectiveSubtitleIndex,
                     ) +
                     1)
-        : (streams.indexWhere((s) => s['IsDefault'] == true) + 1);
+        : (displayStreams.indexWhere((s) => s['IsDefault'] == true) + 1);
     final options = [
       TrackOption(label: AppLocalizations.of(context).none),
-      ...streams.asMap().entries.map((entry) {
+      ...displayStreams.asMap().entries.map((entry) {
         final trackNumber = entry.key + 1;
         final s = entry.value;
         final display =
@@ -5831,9 +5901,10 @@ class _ActionButtonsState extends State<_ActionButtons> {
       }
       if (result == 0) {
         setState(() => _selectedSubtitleIndex = -1);
-      } else if (result - 1 < streams.length) {
+      } else if (result - 1 < displayStreams.length) {
         setState(
-          () => _selectedSubtitleIndex = streams[result - 1]['Index'] as int?,
+          () =>
+              _selectedSubtitleIndex = displayStreams[result - 1]['Index'] as int?,
         );
       }
     }

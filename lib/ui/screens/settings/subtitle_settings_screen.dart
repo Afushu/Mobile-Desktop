@@ -64,6 +64,12 @@ class SubtitleSettingsScreen extends StatelessWidget {
             subtitle: l10n.turnOffSubtitlesByDefault,
             icon: Icons.subtitles_off,
           ),
+          SwitchPreferenceTile(
+            preference: UserPreferences.preferSdhSubtitles,
+            title: 'Prefer SDH subtitles',
+            subtitle: 'Prioritize SDH/CC subtitle tracks when auto-selecting.',
+            icon: Icons.hearing,
+          ),
           TvFocusHighlight(
             builder: (context, _) {
               var pushed = false;
