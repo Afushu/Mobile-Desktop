@@ -232,6 +232,15 @@ class _SearchScreenState extends State<SearchScreen> {
     return FocusScope.of(context).previousFocus();
   }
 
+  bool _tryFocusNavbar() {
+    final focusNavbar = NavigationLayout.focusNavbarNotifier.value;
+    if (focusNavbar != null) {
+      focusNavbar();
+      return true;
+    }
+    return FocusScope.of(context).previousFocus();
+  }
+
   void _focusSearchField() {
     if (_searchFocus.canRequestFocus) {
       _searchFocus.requestFocus();
@@ -599,7 +608,18 @@ class _SearchScreenState extends State<SearchScreen> {
       return KeyEventResult.ignored;
     }
     if (event.logicalKey.isUpKey) {
+      if (_userPreferences.get(UserPreferences.navbarPosition) ==
+          NavbarPosition.top) {
+        return _tryFocusNavbar()
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      }
       return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      return _tryFocusSidebar()
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
       _searchFocus.requestFocus();
@@ -619,6 +639,12 @@ class _SearchScreenState extends State<SearchScreen> {
       return KeyEventResult.ignored;
     }
     if (event.logicalKey.isUpKey) {
+      if (_userPreferences.get(UserPreferences.navbarPosition) ==
+          NavbarPosition.top) {
+        return _tryFocusNavbar()
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      }
       return KeyEventResult.handled;
     }
     if (event.logicalKey.isDownKey) {
