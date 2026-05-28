@@ -460,7 +460,6 @@ class LibraryBrowseViewModel extends ChangeNotifier {
         nameStartsWith: nameStartsWith,
         nameLessThan: nameLessThan,
         isFavorite: isFavorite,
-        enableImageTypes: 'Primary,Backdrop',
       );
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode ?? 0;
