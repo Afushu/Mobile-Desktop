@@ -114,6 +114,7 @@ resolve_shared_lib() {
       # Prefer libmpv2 where available; keep libmpv1 as distro compatibility fallback.
       libmpv.so.2) pkg_candidates=("libmpv2" "libmpv1") ;;
       libsecret-1.so.0) pkg_candidates=("libsecret-1-0") ;;
+      libsqlite3.so.0) pkg_candidates=("libsqlite3-0") ;;
       libwebkit2gtk-4.1.so.0) pkg_candidates=("libwebkit2gtk-4.1-0") ;;
       libwebkit2gtk-4.0.so.37) pkg_candidates=("libwebkit2gtk-4.0-37") ;;
     esac
@@ -178,6 +179,13 @@ runtime_seed_libs() {
   fi
   seed_libs="$seed_libs"$'\n'"$libsecret_path"
 
+  local libsqlite3_path
+  if ! libsqlite3_path="$(resolve_shared_lib libsqlite3.so.0)"; then
+    echo "Error: could not resolve libsqlite3.so.0. Install libsqlite3-0 on the build host." >&2
+    return 1
+  fi
+  seed_libs="$seed_libs"$'\n'"$libsqlite3_path"
+
   local webkit_path=""
   local webkit_soname
   for webkit_soname in libwebkit2gtk-4.1.so.0 libwebkit2gtk-4.0.so.37; do
@@ -192,6 +200,23 @@ runtime_seed_libs() {
   seed_libs="$seed_libs"$'\n'"$webkit_path"
 
   printf '%s\n' "$seed_libs" | grep -v '^$' || true
+}
+
+ensure_sqlite_unversioned_link() {
+  local dest_lib="$1"
+  mkdir -p "$dest_lib"
+
+  if [ -e "$dest_lib/libsqlite3.so" ]; then
+    return 0
+  fi
+
+  local sqlite_real
+  sqlite_real="$(find "$dest_lib" -maxdepth 1 -type f -name 'libsqlite3.so.*' | sort -V | tail -n1 || true)"
+  if [ -z "$sqlite_real" ]; then
+    return 0
+  fi
+
+  ln -sf "$(basename "$sqlite_real")" "$dest_lib/libsqlite3.so"
 }
 
 collect_transitive_libs() {
@@ -213,6 +238,8 @@ collect_transitive_libs() {
 runtime_skip_pattern() {
   local skip='linux-vdso|ld-linux|libc[.]so|libm[.]so|libpthread|libdl[.]so|librt[.]so'
   skip="$skip"'|libstdc[+][+]|libgcc_s'
+  # Avoid bundling host-sensitive image codec stacks that often mismatch on rolling distros.
+  skip="$skip"'|libavif|libsharpyuv|libwebp|libjxl|libaom|libdav1d|libSvtAv1Enc|libyuv'
   skip="$skip"'|libX[a-z]|libxcb|libxkb|libxshmfence|libICE|libSM'
   skip="$skip"'|libwayland|libffi|libpcre'
   skip="$skip"'|libGL|libEGL|libGLX|libGLdispatch|libOpenGL|libdrm|libgbm'
@@ -287,6 +314,7 @@ inject_linux_runtime_libs() {
 
   local bundled_count
   bundled_count="$(copy_runtime_libs "$bundle_dir/lib" "$all_deps" "$skip")"
+  ensure_sqlite_unversioned_link "$bundle_dir/lib"
   echo "Bundled $bundled_count runtime libraries for AppImage/Tarball"
 }
 
@@ -311,6 +339,7 @@ inject_flatpak_libs() {
 
   local count
   count="$(copy_runtime_libs "$dest_lib" "$all_deps" "$skip")"
+  ensure_sqlite_unversioned_link "$dest_lib"
 
   echo "Bundled $count runtime libraries for Flatpak"
 }
@@ -405,6 +434,35 @@ build_appimage() {
 #!/bin/bash
 APPDIR="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$APPDIR/lib:$LD_LIBRARY_PATH"
+
+resolve_exact_lib() {
+  local lib_name="$1"
+  local old_ifs="$IFS"
+  IFS=':'
+  for lib_dir in $LD_LIBRARY_PATH; do
+    [ -n "$lib_dir" ] && [ -e "$lib_dir/$lib_name" ] && IFS="$old_ifs" && return 0
+  done
+  IFS="$old_ifs"
+
+  for lib_dir in /lib /lib64 /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do
+    [ -e "$lib_dir/$lib_name" ] && return 0
+  done
+
+  return 1
+}
+
+missing_libs="$(ldd "$APPDIR/moonfin" 2>/dev/null | awk '/not found/ {print $1}' | sort -u || true)"
+if ! resolve_exact_lib libsqlite3.so; then
+  missing_libs="$(printf '%s\n%s\n' "$missing_libs" "libsqlite3.so" | awk 'NF' | sort -u)"
+fi
+
+if [ -n "$missing_libs" ]; then
+  echo "Moonfin cannot start. Missing shared libraries:" >&2
+  printf '  - %s\n' $missing_libs >&2
+  echo "Install the missing libraries for your distro and retry." >&2
+  exit 127
+fi
+
 exec "$APPDIR/moonfin" "$@"
 EOF
   chmod +x "$appimage_dir/AppRun"
@@ -441,6 +499,35 @@ build_tarball() {
 #!/bin/sh
 APPDIR="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+resolve_exact_lib() {
+  lib_name="$1"
+  old_ifs="$IFS"
+  IFS=':'
+  for lib_dir in $LD_LIBRARY_PATH; do
+    [ -n "$lib_dir" ] && [ -e "$lib_dir/$lib_name" ] && IFS="$old_ifs" && return 0
+  done
+  IFS="$old_ifs"
+
+  for lib_dir in /lib /lib64 /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do
+    [ -e "$lib_dir/$lib_name" ] && return 0
+  done
+
+  return 1
+}
+
+missing_libs="$(ldd "$APPDIR/moonfin-bin" 2>/dev/null | awk '/not found/ {print $1}' | sort -u || true)"
+if ! resolve_exact_lib libsqlite3.so; then
+  missing_libs="$(printf '%s\n%s\n' "$missing_libs" "libsqlite3.so" | awk 'NF' | sort -u)"
+fi
+
+if [ -n "$missing_libs" ]; then
+  echo "Moonfin cannot start. Missing shared libraries:" >&2
+  printf '  - %s\n' $missing_libs >&2
+  echo "Install the missing libraries for your distro and retry." >&2
+  exit 127
+fi
+
 exec "$APPDIR/moonfin-bin" "$@"
 EOF
     chmod +x "$tar_dir/moonfin"
@@ -829,6 +916,35 @@ modules:
         cat > /app/bin/moonfin << 'EOFRUN'
         #!/bin/sh
         export LD_LIBRARY_PATH="/app/moonfin/lib/moonfin:/app/moonfin/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+
+        resolve_exact_lib() {
+          lib_name="\$1"
+          old_ifs="\$IFS"
+          IFS=':'
+          for lib_dir in \$LD_LIBRARY_PATH; do
+            [ -n "\$lib_dir" ] && [ -e "\$lib_dir/\$lib_name" ] && IFS="\$old_ifs" && return 0
+          done
+          IFS="\$old_ifs"
+
+          for lib_dir in /lib /lib64 /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do
+            [ -e "\$lib_dir/\$lib_name" ] && return 0
+          done
+
+          return 1
+        }
+
+        missing_libs="\$(ldd /app/moonfin/moonfin 2>/dev/null | awk '/not found/ {print \$1}' | sort -u || true)"
+        if ! resolve_exact_lib libsqlite3.so; then
+          missing_libs="\$(printf '%s\\n%s\\n' "\$missing_libs" "libsqlite3.so" | awk 'NF' | sort -u)"
+        fi
+
+        if [ -n "\$missing_libs" ]; then
+          echo "Moonfin cannot start. Missing shared libraries:" >&2
+          printf '  - %s\\n' \$missing_libs >&2
+          echo "Install the missing libraries in the runtime and retry." >&2
+          exit 127
+        fi
+
         exec /app/moonfin/moonfin "\$@"
         EOFRUN
       - chmod +x /app/bin/moonfin

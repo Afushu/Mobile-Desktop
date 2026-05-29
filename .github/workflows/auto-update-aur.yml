@@ -85,9 +85,9 @@ jobs:
           sed -i "s/^sha256sums=.*/sha256sums=('${SHA256}')/" PKGBUILD
 
           if grep -q '^depends=' PKGBUILD; then
-            sed -i "s/^depends=.*/depends=('gtk3' 'glib2' 'mpv' 'ffmpeg' 'libva' 'libvdpau' 'libsecret' 'webkit2gtk-4.1')/" PKGBUILD
+            sed -i "s/^depends=.*/depends=('gtk3' 'glib2' 'mpv' 'ffmpeg' 'libva' 'libvdpau' 'libsecret' 'sqlite' 'webkit2gtk-4.1')/" PKGBUILD
           else
-            sed -i "/^pkgrel=/a depends=('gtk3' 'glib2' 'mpv' 'ffmpeg' 'libva' 'libvdpau' 'libsecret' 'webkit2gtk-4.1')" PKGBUILD
+            sed -i "/^pkgrel=/a depends=('gtk3' 'glib2' 'mpv' 'ffmpeg' 'libva' 'libvdpau' 'libsecret' 'sqlite' 'webkit2gtk-4.1')" PKGBUILD
           fi
 
           # Regenerate .SRCINFO from scratch (4-space indent, matching AUR format)
@@ -106,6 +106,7 @@ jobs:
             "    depends = libva" \
             "    depends = libvdpau" \
             "    depends = libsecret" \
+            "    depends = sqlite" \
             "    depends = webkit2gtk-4.1" \
             "    provides = moonfin" \
             "    conflicts = moonfin" \
