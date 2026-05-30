@@ -107,6 +107,15 @@ resolve_build_dir() {
 resolve_shared_lib() {
   local soname="$1"
 
+  if [ -n "${MOONFIN_MPV_PREFIX:-}" ] && [ -d "${MOONFIN_MPV_PREFIX}/lib" ]; then
+    local pref
+    pref="$(find "${MOONFIN_MPV_PREFIX}/lib" -maxdepth 1 -name "${soname}*" 2>/dev/null | sort -V | tail -n1)"
+    if [ -n "$pref" ] && [ -e "$pref" ]; then
+      printf '%s\n' "$pref"
+      return 0
+    fi
+  fi
+
   # Prefer distro packages to avoid /usr/local builds that dpkg-query cannot map.
   if command -v dpkg-query >/dev/null 2>&1; then
     local pkg_candidates=()
@@ -231,12 +240,17 @@ collect_transitive_libs() {
   local seed_libs="$1"
   local all_deps=""
 
+  local conda_lib=""
+  if [ -n "${MOONFIN_MPV_PREFIX:-}" ] && [ -d "${MOONFIN_MPV_PREFIX}/lib" ]; then
+    conda_lib="${MOONFIN_MPV_PREFIX}/lib"
+  fi
+
   while IFS= read -r seed; do
     [ -z "$seed" ] && continue
     [ ! -f "$seed" ] && continue
 
     local deps
-    deps="$(ldd "$seed" 2>/dev/null | grep -oP '=> \K/[^ ]+' || true)"
+    deps="$(LD_LIBRARY_PATH="${conda_lib}${conda_lib:+:}${LD_LIBRARY_PATH:-}" ldd "$seed" 2>/dev/null | grep -oP '=> \K/[^ ]+' || true)"
     all_deps="$(printf '%s\n%s\n%s' "$all_deps" "$deps" "$seed")"
   done <<< "$seed_libs"
 
@@ -302,6 +316,33 @@ copy_runtime_libs() {
   printf '%s\n' "$count"
 }
 
+bundle_conda_cxx_runtime() {
+  local dest_lib="$1"
+  [ -n "${MOONFIN_MPV_PREFIX:-}" ] || return 0
+  [ -d "${MOONFIN_MPV_PREFIX}/lib" ] || return 0
+  mkdir -p "$dest_lib"
+
+  local libname real_path real_name
+  for libname in libstdc++.so libgcc_s.so; do
+    real_path="$(find "${MOONFIN_MPV_PREFIX}/lib" -maxdepth 1 -name "${libname}*" 2>/dev/null | sort -V | tail -n1)"
+    [ -n "$real_path" ] || continue
+    real_path="$(readlink -f "$real_path")"
+    [ -f "$real_path" ] || continue
+    real_name="$(basename "$real_path")"
+    if [ ! -f "$dest_lib/$real_name" ]; then
+      cp -L "$real_path" "$dest_lib/$real_name"
+      chmod u+w "$dest_lib/$real_name" 2>/dev/null || true
+    fi
+    # Recreate the soname symlink (e.g. libstdc++.so.6 -> libstdc++.so.6.0.32).
+    local soname
+    soname="$(readelf -d "$real_path" 2>/dev/null | sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p' | head -n1)"
+    if [ -n "$soname" ] && [ "$soname" != "$real_name" ] && [ ! -e "$dest_lib/$soname" ]; then
+      ln -sf "$real_name" "$dest_lib/$soname"
+    fi
+    echo "  Bundled conda C++ runtime: $real_name"
+  done
+}
+
 inject_linux_runtime_libs() {
   local bundle_dir="$1"
 
@@ -320,6 +361,7 @@ inject_linux_runtime_libs() {
 
   local bundled_count
   bundled_count="$(copy_runtime_libs "$bundle_dir/lib" "$all_deps" "$skip")"
+  bundle_conda_cxx_runtime "$bundle_dir/lib"
   ensure_sqlite_unversioned_link "$bundle_dir/lib"
   echo "Bundled $bundled_count runtime libraries for AppImage/Tarball"
 }
@@ -345,6 +387,7 @@ inject_flatpak_libs() {
 
   local count
   count="$(copy_runtime_libs "$dest_lib" "$all_deps" "$skip")"
+  bundle_conda_cxx_runtime "$dest_lib"
   ensure_sqlite_unversioned_link "$dest_lib"
 
   echo "Bundled $count runtime libraries for Flatpak"
@@ -415,6 +458,13 @@ build_flutter_binary() {
   local flutter_bin
   flutter_bin="$(resolve_flutter)"
   cd "$REPO_ROOT"
+
+  if [ -n "${MOONFIN_MPV_PREFIX:-}" ] && [ -d "${MOONFIN_MPV_PREFIX}/lib/pkgconfig" ]; then
+    export PKG_CONFIG_PATH="${MOONFIN_MPV_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    echo "Using conda-forge libmpv for the build: $(pkg-config --modversion mpv 2>/dev/null || echo '??')"
+    echo "  pkg-config mpv libdir: $(pkg-config --variable=libdir mpv 2>/dev/null || true)"
+  fi
+
   "$flutter_bin" build linux --release --dart-define=DISTRIBUTION_CHANNEL=linux
 }
 
