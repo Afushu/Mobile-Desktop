@@ -47,11 +47,15 @@ jobs:
         id: check
         run: |
           VERSION="${{ steps.upstream.outputs.version }}"
+          cd /tmp/aur-package
           if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
             echo "Upstream returned null, skipping update"
             echo "needed=false" >> "$GITHUB_OUTPUT"
           elif [ "$VERSION" != "$current_version" ] || [ "$VERSION" != "$current_srcinfo_version" ]; then
             echo "Update needed: PKGBUILD=$current_version, SRCINFO=$current_srcinfo_version, upstream=$VERSION"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          elif ! grep -q 'Moonfin-Client/Moonfin-Core' PKGBUILD; then
+            echo "PKGBUILD has a stale repo URL, re-syncing"
             echo "needed=true" >> "$GITHUB_OUTPUT"
           else
             echo "No update needed (version: $current_version)"
@@ -83,6 +87,8 @@ jobs:
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
           sed -i "s/^sha256sums=.*/sha256sums=('${SHA256}')/" PKGBUILD
+          sed -i "s|^url=.*|url=\"https://github.com/Moonfin-Client/Moonfin-Core\"|" PKGBUILD
+          sed -i "s|^source=.*|source=(\"\${pkgname}-\${pkgver}.tar.gz::https://github.com/Moonfin-Client/Moonfin-Core/releases/download/\${pkgver}/Moonfin_Linux_v\${pkgver}.tar.gz\")|" PKGBUILD
 
           if grep -q '^depends=' PKGBUILD; then
             sed -i "s/^depends=.*/depends=('gtk3' 'glib2' 'libsecret' 'webkit2gtk-4.1')/" PKGBUILD
